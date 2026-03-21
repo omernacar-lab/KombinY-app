@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.3",
+    "expo": "^55.0.8"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"c:/Users/omer_/Desktop/Kombin/mobile/app/\\(auth\\)/\")",
+      "Bash(ls \"c:/Users/omer_/Desktop/Kombin/mobile/app/\\(tabs\\)/\")",
+      "Bash(npm ls:*)"
+    ]
+  }
+}
