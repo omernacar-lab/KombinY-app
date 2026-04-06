@@ -3,6 +3,7 @@
     "name": "Kombin",
     "slug": "kombin",
     "owner": "namelessone03",
+    "icon": "./assets/logo.png",
     "extra": {
       "eas": {
         "projectId": "5569bfa9-313a-46c8-b177-1b5cb61a9421"
@@ -31,6 +32,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#6C63FF"
       },
       "package": "com.namelessone03.kombin",
