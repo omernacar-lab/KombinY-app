@@ -2,27 +2,45 @@
   "expo": {
     "name": "Kombin",
     "slug": "kombin",
+    "owner": "namelessone03",
+    "extra": {
+      "eas": {
+        "projectId": "5569bfa9-313a-46c8-b177-1b5cb61a9421"
+      }
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
       "backgroundColor": "#6C63FF"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.kombin.app",
+      "bundleIdentifier": "com.namelessone03.kombin",
       "infoPlist": {
         "NSCameraUsageDescription": "Kıyafet fotoğrafı çekmek için kamera erişimi gerekli.",
-        "NSPhotoLibraryUsageDescription": "Gardırobunuza kıyafet eklemek için galeri erişimi gerekli."
-      }
+        "NSPhotoLibraryUsageDescription": "Gardırobunuza kıyafet eklemek için galeri erişimi gerekli.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "4"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#6C63FF"
       },
-      "package": "com.kombin.app",
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+      "package": "com.namelessone03.kombin",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "versionCode": 4
     },
     "scheme": "kombin",
     "plugins": [

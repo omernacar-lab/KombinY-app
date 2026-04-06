@@ -1,8 +1,5 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const config = require('../config');
-const supabase = require('../config/supabase');
+const { supabase, supabaseAuth } = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 const { validate, registerSchema, loginSchema } = require('../middleware/validate');
 
@@ -13,42 +10,53 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
     const { email, password, fullName, gender, birthYear, city } = req.body;
 
-    // Email kontrolü
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
-
-    if (existing) {
-      return res.status(409).json({ error: 'Bu email zaten kayıtlı' });
-    }
-
-    // Şifre hash'le
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Kullanıcı oluştur
-    const { data: user, error } = await supabase
-      .from('users')
-      .insert({
-        email,
-        password_hash: passwordHash,
-        full_name: fullName,
-        gender: gender || null,
-        birth_year: birthYear || null,
-        city: city || 'Istanbul',
-      })
-      .select('id, email, full_name, is_premium')
-      .single();
-
-    if (error) throw error;
-
-    // Token oluştur
-    const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
+    // Supabase Auth ile kullanıcı oluştur
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
     });
 
-    res.status(201).json({ user, token });
+    if (authError) {
+      if (authError.message.includes('already been registered')) {
+        return res.status(409).json({ error: 'Bu email zaten kayıtlı' });
+      }
+      throw authError;
+    }
+
+    // Profil bilgilerini güncelle (trigger sadece full_name set ediyor)
+    if (gender || birthYear || city) {
+      await supabase
+        .from('profiles')
+        .update({
+          gender: gender || null,
+          birth_year: birthYear || null,
+          city: city || 'Istanbul',
+        })
+        .eq('id', authData.user.id);
+    }
+
+    // Session oluştur (anon client ile - service client'ın state'ini kirletmemek için)
+    const { data: sessionData, error: sessionError } = await supabaseAuth.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (sessionError) throw sessionError;
+
+    // Profil bilgilerini al
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, is_premium')
+      .eq('id', authData.user.id)
+      .single();
+
+    res.status(201).json({
+      user: profile,
+      token: sessionData.session.access_token,
+      refreshToken: sessionData.session.refresh_token,
+    });
   } catch (err) {
     next(err);
   }
@@ -59,28 +67,53 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, email, full_name, is_premium, password_hash')
-      .eq('email', email)
-      .single();
-
-    if (error || !user) {
-      return res.status(401).json({ error: 'Geçersiz email veya şifre' });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
-
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Geçersiz email veya şifre' });
-    }
-
-    const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
+    const { data: sessionData, error: sessionError } = await supabaseAuth.auth.signInWithPassword({
+      email,
+      password,
     });
 
-    const { password_hash, ...safeUser } = user;
-    res.json({ user: safeUser, token });
+    if (sessionError) {
+      return res.status(401).json({ error: 'Geçersiz email veya şifre' });
+    }
+
+    // Profil bilgilerini al
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, is_premium')
+      .eq('id', sessionData.user.id)
+      .single();
+
+    res.json({
+      user: profile,
+      token: sessionData.session.access_token,
+      refreshToken: sessionData.session.refresh_token,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ==================== TOKEN YENİLE ====================
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token gerekli' });
+    }
+
+    const { data, error } = await supabaseAuth.auth.refreshSession({
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      return res.status(401).json({ error: 'Geçersiz refresh token' });
+    }
+
+    res.json({
+      token: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+    });
   } catch (err) {
     next(err);
   }

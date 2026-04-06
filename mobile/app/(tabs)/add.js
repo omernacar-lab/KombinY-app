@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS, SHADOWS, CATEGORIES } from '../../constants/theme';
@@ -27,37 +28,42 @@ export default function AddClothingScreen() {
   const router = useRouter();
 
   const pickImage = async (source) => {
-    let result;
+    try {
+      let result;
 
-    if (source === 'camera') {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('İzin Gerekli', 'Kamera kullanmak için izin verin');
-        return;
+      if (source === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('İzin Gerekli', 'Kamera kullanmak için izin verin');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          quality: 0.8,
+          allowsEditing: true,
+          aspect: [3, 4],
+          base64: true,
+        });
+      } else {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('İzin Gerekli', 'Galeri erişimi için izin verin');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          quality: 0.8,
+          allowsEditing: true,
+          aspect: [3, 4],
+          base64: true,
+        });
       }
-      result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-        allowsEditing: true,
-        aspect: [3, 4],
-      });
-    } else {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('İzin Gerekli', 'Galeri erişimi için izin verin');
-        return;
-      }
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-        allowsEditing: true,
-        aspect: [3, 4],
-      });
-    }
 
-    if (!result.canceled && result.assets[0]) {
-      setImage(result.assets[0]);
-      setAiResult(null);
+      if (!result.canceled && result.assets?.[0]) {
+        setImage(result.assets[0]);
+        setAiResult(null);
+      }
+    } catch (error) {
+      console.error('pickImage error:', error);
+      Alert.alert('Hata', 'Fotoğraf seçilirken bir hata oluştu. Lütfen tekrar deneyin.');
     }
   };
 
@@ -69,17 +75,29 @@ export default function AddClothingScreen() {
 
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('image', {
-        uri: image.uri,
-        type: 'image/jpeg',
-        name: 'clothing.jpg',
-      });
-      if (name) formData.append('name', name);
-      if (brand) formData.append('brand', brand);
-      if (selectedCategory) formData.append('category', selectedCategory);
+      // base64 verisi yoksa URI'dan oku (crop sonrası kaybolabiliyor)
+      let base64Data = image.base64;
+      if (!base64Data && image.uri) {
+        base64Data = await FileSystem.readAsStringAsync(image.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
 
-      const result = await addClothing(formData);
+      if (!base64Data) {
+        Alert.alert('Hata', 'Fotoğraf verisi okunamadı, tekrar deneyin');
+        return;
+      }
+
+      // 30 saniye timeout
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.')), 30000)
+      );
+
+      const result = await Promise.race([
+        addClothing(base64Data, { name, brand, category: selectedCategory }),
+        timeoutPromise,
+      ]);
+
       setAiResult(result.ai_analysis);
 
       Alert.alert(
@@ -100,7 +118,7 @@ export default function AddClothingScreen() {
         ]
       );
     } catch (error) {
-      Alert.alert('Hata', error.response?.data?.error || 'Kıyafet eklenemedi');
+      Alert.alert('Hata', error.data?.error || error.message || 'Kıyafet eklenemedi');
     } finally {
       setLoading(false);
     }
@@ -111,10 +129,22 @@ export default function AddClothingScreen() {
       <Text style={styles.title}>Kıyafet Ekle</Text>
       <Text style={styles.subtitle}>Fotoğraf çek veya galeriden seç, AI analiz etsin!</Text>
 
-      {/* Video ile Toplu Tarama */}
-      <TouchableOpacity style={styles.videoScanBanner} onPress={() => router.push('/scan-video')}>
+      {/* Toplu Fotoğraf Ekleme */}
+      <TouchableOpacity style={styles.videoScanBanner} onPress={() => router.push('/scan-photos')}>
         <View style={styles.videoScanLeft}>
-          <Ionicons name="videocam" size={28} color={COLORS.primary} />
+          <Ionicons name="images" size={28} color={COLORS.primary} />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.videoScanTitle}>Toplu Fotoğraf Ekle</Text>
+            <Text style={styles.videoScanDesc}>5-10 kıyafeti tek seferde fotoğrafla!</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={22} color={COLORS.textLight} />
+      </TouchableOpacity>
+
+      {/* Video ile Toplu Tarama */}
+      <TouchableOpacity style={[styles.videoScanBanner, { backgroundColor: COLORS.accent + '10', borderColor: COLORS.accent + '25' }]} onPress={() => router.push('/scan-video')}>
+        <View style={styles.videoScanLeft}>
+          <Ionicons name="videocam" size={28} color={COLORS.accent} />
           <View style={{ marginLeft: 12, flex: 1 }}>
             <Text style={styles.videoScanTitle}>Video ile Dolap Tara</Text>
             <Text style={styles.videoScanDesc}>Tüm dolabını tek seferde ekle!</Text>

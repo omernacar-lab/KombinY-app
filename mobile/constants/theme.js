@@ -83,6 +83,4 @@ export const OCCASIONS = [
   { value: 'gece', label: 'Gece', emoji: '🌙' },
 ];
 
-export const API_URL = __DEV__
-  ? 'http://192.168.1.3:3000/api'
-  : 'https://your-production-url.com/api';
+// API_URL artık gerekli değil — tüm istekler Supabase client veya Edge Functions üzerinden gidiyor

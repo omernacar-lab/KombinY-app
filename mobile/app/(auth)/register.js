@@ -38,8 +38,11 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await register({ fullName: fullName.trim(), email: email.trim(), password, gender, city });
+      // Basarili kayit - eger email onay gerekiyorsa kullaniciya bildir
+      // Supabase varsayilan olarak email onay bekler
     } catch (error) {
-      Alert.alert('Kayıt Hatası', error.response?.data?.error || 'Bir hata oluştu');
+      // Supabase hatalari error.message olarak gelir
+      Alert.alert('Kayıt Hatası', error.message || 'Bir hata oluştu');
     } finally {
       setLoading(false);
     }

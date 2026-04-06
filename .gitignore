@@ -6,4 +6,3 @@ node_modules/
 *.log
 dist/
 .expo/
-assets/logo.png

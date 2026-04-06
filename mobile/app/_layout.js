@@ -45,6 +45,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="scan-video" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="scan-photos" options={{ presentation: 'modal' }} />
       </Stack>
     </ErrorBoundary>
   );

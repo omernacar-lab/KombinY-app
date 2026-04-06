@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kkplxeksklwarvvnkatx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrcGx4ZWtza2x3YXJ2dm5rYXR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNjAwMTAsImV4cCI6MjA4OTYzNjAxMH0.lYctT33HK10oX5YaPvBVkQ4L3wqV2FMNDjEanTk7pn4"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

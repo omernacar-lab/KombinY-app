@@ -9,42 +9,66 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SHADOWS, OCCASIONS } from '../../constants/theme';
-import { useOutfitStore, useWeatherStore, useAuthStore } from '../../store';
+import { COLORS, SHADOWS, OCCASIONS, CATEGORIES } from '../../constants/theme';
+import { useOutfitStore, useWeatherStore, useAuthStore, useWardrobeStore } from '../../store';
+import { wardrobeAPI } from '../../services/api';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { currentOutfit, isGenerating, generateOutfit, sendFeedback, wearOutfit } = useOutfitStore();
-  const { weather, fetchWeather } = useWeatherStore();
+  const { currentOutfit, isGenerating, generateOutfit, sendFeedback, wearOutfit, updateOutfitItems, addOutfitItem } = useOutfitStore();
+  const { weather, fetchWeather, weatherError } = useWeatherStore();
+  const { clothes, fetchClothes } = useWardrobeStore();
   const [occasion, setOccasion] = useState('gunluk');
   const [refreshing, setRefreshing] = useState(false);
+  const [removedItems, setRemovedItems] = useState([]);
+  const [showAddPicker, setShowAddPicker] = useState(false);
+  const [addPickerCategory, setAddPickerCategory] = useState(null);
 
+  // Hava durumu - sadece oturum varsa fetch et
+  const { isAuthenticated, session } = useAuthStore();
   useEffect(() => {
-    if (user?.city) {
-      fetchWeather(user.city);
+    if (!isAuthenticated || !session?.access_token) return;
+    if (weatherError) return; // Hata varsa tekrar fetch etme
+    const city = user?.city || user?.user_metadata?.city || 'Istanbul';
+    fetchWeather(city);
+  }, [isAuthenticated, session, user, weatherError]);
+  // Weather error mesajını ekranda göster
+  useEffect(() => {
+    if (weatherError) {
+      Alert.alert('Hava Durumu Hatası', weatherError);
     }
-  }, [user?.city]);
+  }, [weatherError]);
+
+  // Kombin değişince removed items sıfırla
+  useEffect(() => {
+    setRemovedItems([]);
+  }, [currentOutfit?.outfit_id]);
 
   const onRefresh = useCallback(async () => {
+    if (!isAuthenticated || !session?.access_token) return;
+    if (weatherError) return; // Hata varsa tekrar fetch etme
     setRefreshing(true);
-    await fetchWeather(user?.city || 'Istanbul');
+    const city = user?.city || user?.user_metadata?.city || 'Istanbul';
+    await fetchWeather(city);
     setRefreshing(false);
-  }, [user?.city]);
+  }, [isAuthenticated, session, user, weatherError]);
 
   const handleGenerate = async () => {
     try {
-      await generateOutfit(occasion, user?.city);
+      await generateOutfit(occasion, user?.city || user?.user_metadata?.city);
     } catch (error) {
-      const msg = error.response?.data;
+      const msg = error.data || error;
       if (msg?.upgrade) {
         Alert.alert('Premium Gerekli', msg.message, [
           { text: 'Tamam', style: 'cancel' },
-          { text: 'Premium\'a Geç', onPress: () => {} },
+          { text: "Premium'a Geç", onPress: () => {} },
         ]);
       } else {
-        Alert.alert('Hata', msg?.error || 'Kombin oluşturulamadı');
+        Alert.alert('Hata', msg?.error || error?.message || 'Kombin oluşturulamadı');
       }
     }
   };
@@ -55,11 +79,114 @@ export default function HomeScreen() {
       await sendFeedback(currentOutfit.outfit_id, liked);
       if (liked) {
         Alert.alert('Harika! 🎉', 'Bu tarzı sevdiğini not ettik, önerilerimiz gelişecek!');
+      } else {
+        Alert.alert('Anladık 👍', 'Bu kombini beğenmediğini kaydettik. Bir dahakine daha iyi olacak!');
       }
     } catch {
       // ignore
     }
   };
+
+  // Parça bazlı beğenmeme - o kıyafeti kombinden çıkar ve tercih öğren
+  const handleRemoveItem = (item, index) => {
+    const itemName = item.clothing?.name || 'Bu kıyafet';
+    const category = item.clothing?.category;
+    const categoryLabel = CATEGORIES[category]?.label || category;
+
+    Alert.alert(
+      `${itemName} Çıkarılsın mı?`,
+      'Bu parçayı kombinden çıkarıp yerine başka bir öneri alabilirsin.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Beğenmedim, Çıkar',
+          style: 'destructive',
+          onPress: async () => {
+            // Parçayı kaldır
+            setRemovedItems((prev) => [...prev, index]);
+
+            // Parça bazlı negatif feedback gönder (tercih öğrenme)
+            if (item.clothing_id && currentOutfit?.outfit_id) {
+              try {
+                await sendFeedback(currentOutfit.outfit_id, false);
+              } catch {
+                // silent
+              }
+            }
+          },
+        },
+        {
+          text: 'Değiştir',
+          onPress: () => handleSwapItem(item, index),
+        },
+      ]
+    );
+  };
+
+  // Parçayı aynı kategoriden başka bir kıyafetle değiştir
+  const handleSwapItem = async (item, index) => {
+    const category = item.clothing?.category;
+    if (!category) return;
+
+    // Mevcut gardıroptan aynı kategorideki alternatifleri bul
+    let alternatives = clothes.filter(
+      (c) =>
+        c.category === category &&
+        c.status === 'temiz' &&
+        !c.is_archived &&
+        c.id !== item.clothing_id &&
+        !currentOutfit.items.some((oi) => oi.clothing_id === c.id)
+    );
+
+    if (alternatives.length === 0) {
+      // Gardırop yüklü değilse yükle ve tekrar dene
+      try {
+        await fetchClothes({ category });
+      } catch {
+        // ignore
+      }
+      Alert.alert('Alternatif Yok', 'Bu kategoride başka temiz kıyafet bulunamadı.');
+      return;
+    }
+
+    // Rastgele bir alternatif seç
+    const randomAlt = alternatives[Math.floor(Math.random() * alternatives.length)];
+
+    // Outfit items'ı güncelle
+    updateOutfitItems(index, {
+      clothing_id: randomAlt.id,
+      clothing: randomAlt,
+      reason: 'Senin seçiminle değiştirildi',
+    });
+  };
+
+  // Kombine parça ekleme
+  const handleOpenAddPicker = async () => {
+    // Gardırop yüklü değilse yükle
+    if (clothes.length === 0) {
+      try { await fetchClothes(); } catch { /* ignore */ }
+    }
+    setAddPickerCategory(null);
+    setShowAddPicker(true);
+  };
+
+  const handleAddItem = (clothing) => {
+    // Zaten kombinde mi kontrol et
+    if (currentOutfit?.items?.some((i) => i.clothing_id === clothing.id)) {
+      Alert.alert('Zaten Var', 'Bu kıyafet zaten kombinde.');
+      return;
+    }
+    addOutfitItem(clothing);
+    setShowAddPicker(false);
+  };
+
+  // Picker için filtrelenmiş kıyafetler
+  const pickerClothes = clothes.filter((c) => {
+    if (c.is_archived || c.status !== 'temiz') return false;
+    if (currentOutfit?.items?.some((i) => i.clothing_id === c.id)) return false;
+    if (addPickerCategory && c.category !== addPickerCategory) return false;
+    return true;
+  });
 
   const handleWear = async () => {
     if (!currentOutfit?.outfit_id) return;
@@ -78,6 +205,9 @@ export default function HomeScreen() {
     return 'İyi akşamlar';
   };
 
+  // Görünür kıyafetler (çıkarılanlar hariç)
+  const visibleItems = currentOutfit?.items?.filter((_, i) => !removedItems.includes(i)) || [];
+
   return (
     <ScrollView
       style={styles.container}
@@ -87,7 +217,8 @@ export default function HomeScreen() {
       {/* Karşılama */}
       <View style={styles.greeting}>
         <Text style={styles.greetingText}>
-          {getGreeting()}, {user?.full_name?.split(' ')[0]} 👋
+          {getGreeting()},{' '}
+          {user?.full_name?.split(' ')[0] || user?.user_metadata?.full_name?.split(' ')[0] || ''} 👋
         </Text>
         <Text style={styles.dateText}>
           {new Date().toLocaleDateString('tr-TR', {
@@ -158,22 +289,48 @@ export default function HomeScreen() {
         <View style={styles.outfitCard}>
           <Text style={styles.outfitTitle}>Bugünün Kombini ✨</Text>
 
-          {/* Kıyafet Listesi */}
-          {currentOutfit.items?.map((item, index) => (
-            <View key={index} style={styles.outfitItem}>
-              {item.clothing?.thumbnail_url ? (
-                <Image source={{ uri: item.clothing.thumbnail_url }} style={styles.itemImage} />
-              ) : (
-                <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
-                  <Ionicons name="shirt" size={24} color={COLORS.textLight} />
+          {/* Kıyafet Listesi - swipe/tap ile çıkar */}
+          {visibleItems.map((item, index) => {
+            const actualIndex = currentOutfit.items.indexOf(item);
+            return (
+              <View key={actualIndex} style={styles.outfitItem}>
+                {item.clothing?.thumbnail_url ? (
+                  <Image source={{ uri: item.clothing.thumbnail_url }} style={styles.itemImage} />
+                ) : (
+                  <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+                    <Ionicons name="shirt" size={24} color={COLORS.textLight} />
+                  </View>
+                )}
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName}>{item.clothing?.name || 'Kıyafet'}</Text>
+                  <Text style={styles.itemReason}>{item.reason}</Text>
                 </View>
-              )}
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName}>{item.clothing?.name || 'Kıyafet'}</Text>
-                <Text style={styles.itemReason}>{item.reason}</Text>
+                {/* Parça bazlı kontroller */}
+                <TouchableOpacity
+                  style={styles.itemSwapButton}
+                  onPress={() => handleRemoveItem(item, actualIndex)}
+                >
+                  <Ionicons name="swap-horizontal" size={18} color={COLORS.primary} />
+                </TouchableOpacity>
               </View>
+            );
+          })}
+
+          {/* Parça Ekle Butonu */}
+          <TouchableOpacity style={styles.addItemButton} onPress={handleOpenAddPicker}>
+            <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.addItemText}>Parça Ekle</Text>
+          </TouchableOpacity>
+
+          {/* Çıkarılan parça uyarısı */}
+          {removedItems.length > 0 && (
+            <View style={styles.removedNotice}>
+              <Ionicons name="information-circle" size={16} color={COLORS.info} />
+              <Text style={styles.removedNoticeText}>
+                {removedItems.length} parça çıkarıldı. Tercihlerini kaydettik!
+              </Text>
             </View>
-          ))}
+          )}
 
           {/* Stil İpucu */}
           {currentOutfit.styling_tip && (
@@ -198,7 +355,7 @@ export default function HomeScreen() {
               onPress={handleWear}
             >
               <Ionicons name="checkmark-circle" size={22} color={COLORS.textWhite} />
-              <Text style={[styles.actionText, { color: COLORS.textWhite }]}>Bunu Giyiyorum</Text>
+              <Text style={[styles.actionText, { color: COLORS.textWhite }]}>Giyiyorum</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -211,6 +368,67 @@ export default function HomeScreen() {
           </View>
         </View>
       )}
+      {/* Parça Ekle Modal */}
+      <Modal visible={showAddPicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Parça Ekle</Text>
+              <TouchableOpacity onPress={() => setShowAddPicker(false)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Kategori Filtresi */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.modalCategoryScroll}>
+              <TouchableOpacity
+                style={[styles.modalCategoryChip, !addPickerCategory && styles.modalCategoryChipActive]}
+                onPress={() => setAddPickerCategory(null)}
+              >
+                <Text style={[styles.modalCategoryLabel, !addPickerCategory && styles.modalCategoryLabelActive]}>Tümü</Text>
+              </TouchableOpacity>
+              {Object.entries(CATEGORIES).map(([key, val]) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.modalCategoryChip, addPickerCategory === key && styles.modalCategoryChipActive]}
+                  onPress={() => setAddPickerCategory(addPickerCategory === key ? null : key)}
+                >
+                  <Text style={styles.modalCategoryEmoji}>{val.emoji}</Text>
+                  <Text style={[styles.modalCategoryLabel, addPickerCategory === key && styles.modalCategoryLabelActive]}>{val.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Kıyafet Listesi */}
+            <FlatList
+              data={pickerClothes}
+              keyExtractor={(item) => item.id}
+              style={styles.modalList}
+              ListEmptyComponent={
+                <Text style={styles.modalEmpty}>Bu kategoride eklenecek kıyafet yok.</Text>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.modalItem} onPress={() => handleAddItem(item)}>
+                  {item.thumbnail_url ? (
+                    <Image source={{ uri: item.thumbnail_url }} style={styles.modalItemImage} />
+                  ) : (
+                    <View style={[styles.modalItemImage, styles.itemImagePlaceholder]}>
+                      <Ionicons name="shirt" size={20} color={COLORS.textLight} />
+                    </View>
+                  )}
+                  <View style={styles.modalItemInfo}>
+                    <Text style={styles.modalItemName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.modalItemMeta}>
+                      {CATEGORIES[item.category]?.label || item.category} · {item.color}
+                    </Text>
+                  </View>
+                  <Ionicons name="add-circle" size={24} color={COLORS.primary} />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -289,6 +507,25 @@ const styles = StyleSheet.create({
   itemInfo: { flex: 1 },
   itemName: { fontSize: 16, fontWeight: '600', color: COLORS.text },
   itemReason: { fontSize: 13, color: COLORS.textSecondary, marginTop: 2 },
+  itemSwapButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  removedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.info + '10',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+    gap: 6,
+  },
+  removedNoticeText: { fontSize: 12, color: COLORS.info, flex: 1 },
   tipContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -318,4 +555,67 @@ const styles = StyleSheet.create({
   wearButton: { backgroundColor: COLORS.primary },
   likeButton: { backgroundColor: COLORS.secondary + '15' },
   actionText: { fontSize: 12, fontWeight: '600' },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary + '40',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    marginTop: 4,
+    gap: 6,
+  },
+  addItemText: { fontSize: 14, fontWeight: '600', color: COLORS.primary },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+    paddingBottom: 34,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  modalCategoryScroll: { paddingHorizontal: 16, paddingVertical: 12 },
+  modalCategoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+  },
+  modalCategoryChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  modalCategoryEmoji: { fontSize: 14, marginRight: 4 },
+  modalCategoryLabel: { fontSize: 13, color: COLORS.text, fontWeight: '500' },
+  modalCategoryLabelActive: { color: COLORS.textWhite },
+  modalList: { paddingHorizontal: 16 },
+  modalEmpty: { textAlign: 'center', color: COLORS.textLight, marginTop: 40, fontSize: 14 },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
+  },
+  modalItemImage: { width: 48, height: 48, borderRadius: 10, marginRight: 12 },
+  modalItemInfo: { flex: 1 },
+  modalItemName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  modalItemMeta: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
 });

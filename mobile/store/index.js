@@ -1,47 +1,87 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import { supabase } from '../services/supabase';
 import { authAPI, wardrobeAPI, outfitAPI, weatherAPI } from '../services/api';
 
 // ==================== AUTH STORE ====================
+let _authSubscription = null;
+
 export const useAuthStore = create((set, get) => ({
   user: null,
-  token: null,
+  session: null,
   isLoading: true,
   isAuthenticated: false,
 
   initialize: async () => {
-    try {
-      const token = await SecureStore.getItemAsync('auth_token');
-      if (token) {
-        const { data } = await authAPI.getMe();
-        set({ user: data.user, token, isAuthenticated: true, isLoading: false });
-      } else {
-        set({ isLoading: false });
-      }
-    } catch {
-      await SecureStore.deleteItemAsync('auth_token');
+    // Önceki listener varsa temizle (duplicate listener önleme)
+    if (_authSubscription) {
+      _authSubscription.unsubscribe();
+      _authSubscription = null;
+    }
+
+    // Oturum değişikliklerini ÖNCE dinlemeye başla
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      set({
+        user: session?.user || null,
+        session,
+        isAuthenticated: !!session,
+        isLoading: false,
+      });
+    });
+    _authSubscription = subscription;
+
+    // SecureStore'dan cached session'ı al (ağ çağrısı yapmaz)
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session) {
+      set({
+        user: session.user,
+        session,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } else {
       set({ isLoading: false });
     }
   },
 
   login: async (email, password) => {
-    const { data } = await authAPI.login({ email, password });
-    await SecureStore.setItemAsync('auth_token', data.token);
-    set({ user: data.user, token: data.token, isAuthenticated: true });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    set({
+      user: data.user,
+      session: data.session,
+      isAuthenticated: true,
+    });
   },
 
-  register: async (userData) => {
-    const { data } = await authAPI.register(userData);
-    await SecureStore.setItemAsync('auth_token', data.token);
-    set({ user: data.user, token: data.token, isAuthenticated: true });
+  register: async ({ email, password, fullName, city }) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName, city: city || 'Istanbul' },
+      },
+    });
+    if (error) throw error;
+    set({
+      user: data.user,
+      session: data.session,
+      isAuthenticated: true,
+    });
   },
 
   logout: async () => {
-    await SecureStore.deleteItemAsync('auth_token');
-    set({ user: null, token: null, isAuthenticated: false });
+    await supabase.auth.signOut();
+    set({ user: null, session: null, isAuthenticated: false });
   },
 
-  updateUser: (user) => set({ user }),
+  updateUser: (profileData) => set((state) => ({
+    user: state.user ? { ...state.user, ...profileData } : profileData,
+  })),
 }));
 
 // ==================== WARDROBE STORE ====================
@@ -81,8 +121,8 @@ export const useWardrobeStore = create((set, get) => ({
     }
   },
 
-  addClothing: async (formData) => {
-    const { data } = await wardrobeAPI.addClothing(formData);
+  addClothing: async (imageBase64, options = {}) => {
+    const { data } = await wardrobeAPI.addClothing(imageBase64, options);
     set((state) => ({ clothes: [data.clothing, ...state.clothes] }));
     return data;
   },
@@ -103,6 +143,14 @@ export const useWardrobeStore = create((set, get) => ({
         ids.includes(c.id) ? { ...c, status: 'temiz' } : c
       ),
     }));
+  },
+
+  updateClothing: async (id, updates) => {
+    const { data } = await wardrobeAPI.updateClothing(id, updates);
+    set((state) => ({
+      clothes: state.clothes.map((c) => (c.id === id ? { ...c, ...data.clothing } : c)),
+    }));
+    return data;
   },
 
   deleteClothing: async (id) => {
@@ -152,6 +200,28 @@ export const useOutfitStore = create((set) => ({
     await outfitAPI.wear(outfitId);
   },
 
+  addOutfitItem: (clothing) => {
+    set((state) => {
+      if (!state.currentOutfit) return state;
+      const items = [...(state.currentOutfit.items || [])];
+      items.push({
+        clothing_id: clothing.id,
+        clothing,
+        reason: 'Senin eklediğin',
+      });
+      return { currentOutfit: { ...state.currentOutfit, items } };
+    });
+  },
+
+  updateOutfitItems: (index, newItem) => {
+    set((state) => {
+      if (!state.currentOutfit?.items) return state;
+      const items = [...state.currentOutfit.items];
+      items[index] = { ...items[index], ...newItem };
+      return { currentOutfit: { ...state.currentOutfit, items } };
+    });
+  },
+
   fetchHistory: async () => {
     const { data } = await outfitAPI.history({ limit: 30 });
     set({ history: data.outfits });
@@ -164,13 +234,16 @@ export const useOutfitStore = create((set) => ({
 export const useWeatherStore = create((set) => ({
   weather: null,
   clothingAdvice: null,
+  weatherError: null,
 
   fetchWeather: async (city) => {
     try {
+      set({ weatherError: null });
       const { data } = await weatherAPI.get(city);
       set({ weather: data.weather, clothingAdvice: data.clothing_advice });
     } catch (err) {
       console.error('fetchWeather failed:', err);
+      set({ weatherError: err.message });
     }
   },
 }));

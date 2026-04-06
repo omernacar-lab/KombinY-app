@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS, SHADOWS, CATEGORIES } from '../constants/theme';
@@ -145,16 +146,14 @@ export default function ScanVideoScreen() {
 
       setProgress({ step: 'AI analiz ediyor...', current: 0, total: 1 });
 
-      const formData = new FormData();
-      frames.forEach((uri, index) => {
-        formData.append('frames', {
-          uri,
-          type: 'image/jpeg',
-          name: `frame_${index}.jpg`,
-        });
-      });
+      // Frame URI'larını base64'e çevir
+      const framesBase64 = await Promise.all(
+        frames.map((uri) =>
+          FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
+        )
+      );
 
-      const { data } = await wardrobeAPI.scanVideo(formData);
+      const { data } = await wardrobeAPI.scanVideo(framesBase64);
 
       if (data.detected_items.length === 0) {
         Alert.alert('Sonuc', 'Hic kiyafet tespit edilemedi. Daha yakindan cekmeyi deneyin.');
@@ -168,7 +167,7 @@ export default function ScanVideoScreen() {
       setItemPhotos({});
       setPhase('review');
     } catch (error) {
-      Alert.alert('Hata', error.response?.data?.error || 'Tarama basarisiz oldu');
+      Alert.alert('Hata', error.data?.error || error.message || 'Tarama basarisiz oldu');
       setPhase('select');
     }
   };
@@ -213,13 +212,11 @@ export default function ScanVideoScreen() {
 
           if (clothingId && itemPhotos[originalIndex]) {
             try {
-              const photoForm = new FormData();
-              photoForm.append('image', {
-                uri: itemPhotos[originalIndex],
-                type: 'image/jpeg',
-                name: 'photo.jpg',
-              });
-              await wardrobeAPI.uploadPhoto(clothingId, photoForm);
+              const photoBase64 = await FileSystem.readAsStringAsync(
+                itemPhotos[originalIndex],
+                { encoding: 'base64' }
+              );
+              await wardrobeAPI.uploadPhoto(clothingId, photoBase64);
             } catch {
               // Foto yuklenemezse devam et
             }

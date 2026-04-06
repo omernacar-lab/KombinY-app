@@ -1,6 +1,17 @@
 {
-  "dependencies": {
-    "@supabase/supabase-js": "^2.99.3",
-    "expo": "^55.0.8"
+  "name": "kombin",
+  "private": true,
+  "scripts": {
+    "mobile": "cd mobile && npx expo start",
+    "backend": "cd backend && npm run dev",
+    "dev": "concurrently \"npm run backend\" \"npm run mobile\"",
+    "ios": "cd mobile && npx expo start --ios",
+    "android": "cd mobile && npx expo start --android",
+    "build": "cd mobile && eas build --platform all",
+    "build:ios": "cd mobile && eas build --platform ios",
+    "build:android": "cd mobile && eas build --platform android"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

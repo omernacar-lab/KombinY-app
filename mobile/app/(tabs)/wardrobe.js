@@ -8,6 +8,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Modal,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS, CATEGORIES, STATUS_MAP } from '../../constants/theme';
@@ -20,11 +23,16 @@ export default function WardrobeScreen() {
     selectedCategory,
     fetchClothes,
     updateStatus,
+    updateClothing,
+    deleteClothing,
     setCategory,
     fetchStats,
     stats,
   } = useWardrobeStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState({});
 
   useEffect(() => {
     fetchClothes(selectedCategory ? { category: selectedCategory } : undefined);
@@ -34,26 +42,71 @@ export default function WardrobeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchClothes(selectedCategory ? { category: selectedCategory } : undefined);
+    await fetchStats();
     setRefreshing(false);
   }, [selectedCategory]);
 
-  const handleStatusChange = (item) => {
-    const statusOptions = Object.entries(STATUS_MAP).map(([key, val]) => ({
-      text: `${val.emoji} ${val.label}`,
-      onPress: () => updateStatus(item.id, key),
-    }));
+  const openDetail = (item) => {
+    setSelectedItem(item);
+    setEditData({
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      color: item.color,
+      brand: item.brand || '',
+    });
+    setEditMode(false);
+  };
 
-    Alert.alert(`${item.name} - Durum Değiştir`, 'Yeni durumu seçin:', [
-      ...statusOptions,
-      { text: 'İptal', style: 'cancel' },
-    ]);
+  const closeDetail = () => {
+    setSelectedItem(null);
+    setEditMode(false);
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Kıyafeti Sil',
+      `"${selectedItem.name}" gardırobundan silinecek. Emin misin?`,
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Sil',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteClothing(selectedItem.id);
+              closeDetail();
+              fetchStats();
+            } catch {
+              Alert.alert('Hata', 'Silme işlemi başarısız');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      await updateClothing(selectedItem.id, editData);
+      setSelectedItem({ ...selectedItem, ...editData });
+      setEditMode(false);
+      fetchStats();
+    } catch {
+      Alert.alert('Hata', 'Güncelleme başarısız');
+    }
+  };
+
+  const handleStatusChange = (status) => {
+    updateStatus(selectedItem.id, status);
+    setSelectedItem({ ...selectedItem, status });
   };
 
   const renderClothingItem = ({ item }) => {
     const statusInfo = STATUS_MAP[item.status] || STATUS_MAP.temiz;
 
     return (
-      <TouchableOpacity style={styles.clothingCard} onPress={() => handleStatusChange(item)}>
+      <TouchableOpacity style={styles.clothingCard} onPress={() => openDetail(item)}>
         {item.thumbnail_url ? (
           <Image source={{ uri: item.thumbnail_url }} style={styles.clothingImage} />
         ) : (
@@ -163,6 +216,158 @@ export default function WardrobeScreen() {
           </View>
         }
       />
+
+      {/* Kıyafet Detay / Düzenleme Modal */}
+      <Modal visible={!!selectedItem} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {selectedItem && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Üst Bar */}
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={closeDetail}>
+                    <Ionicons name="close" size={26} color={COLORS.text} />
+                  </TouchableOpacity>
+                  <Text style={styles.modalTitle}>
+                    {editMode ? 'Düzenle' : 'Kıyafet Detayı'}
+                  </Text>
+                  <View style={styles.modalActions}>
+                    {!editMode ? (
+                      <>
+                        <TouchableOpacity onPress={() => setEditMode(true)} style={styles.headerBtn}>
+                          <Ionicons name="pencil" size={20} color={COLORS.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleDelete} style={styles.headerBtn}>
+                          <Ionicons name="trash" size={20} color={COLORS.error} />
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <TouchableOpacity onPress={handleSaveEdit} style={styles.saveBtn}>
+                        <Text style={styles.saveBtnText}>Kaydet</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* Fotoğraf */}
+                {selectedItem.image_url && (
+                  <Image
+                    source={{ uri: selectedItem.image_url }}
+                    style={styles.detailImage}
+                  />
+                )}
+
+                {editMode ? (
+                  /* Düzenleme Formu */
+                  <View style={styles.editForm}>
+                    <Text style={styles.fieldLabel}>İsim</Text>
+                    <TextInput
+                      style={styles.editInput}
+                      value={editData.name}
+                      onChangeText={(t) => setEditData({ ...editData, name: t })}
+                    />
+
+                    <Text style={styles.fieldLabel}>Kategori</Text>
+                    <View style={styles.chipRow}>
+                      {Object.entries(CATEGORIES).map(([key, val]) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[styles.chip, editData.category === key && styles.chipActive]}
+                          onPress={() => setEditData({ ...editData, category: key })}
+                        >
+                          <Text style={styles.chipEmoji}>{val.emoji}</Text>
+                          <Text style={[styles.chipText, editData.category === key && styles.chipTextActive]}>
+                            {val.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={styles.fieldLabel}>Renk</Text>
+                    <TextInput
+                      style={styles.editInput}
+                      value={editData.color}
+                      onChangeText={(t) => setEditData({ ...editData, color: t })}
+                    />
+
+                    <Text style={styles.fieldLabel}>Marka</Text>
+                    <TextInput
+                      style={styles.editInput}
+                      value={editData.brand}
+                      onChangeText={(t) => setEditData({ ...editData, brand: t })}
+                      placeholder="Opsiyonel"
+                      placeholderTextColor={COLORS.textLight}
+                    />
+                  </View>
+                ) : (
+                  /* Detay Görünümü */
+                  <View style={styles.detailInfo}>
+                    <Text style={styles.detailName}>{selectedItem.name}</Text>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Kategori</Text>
+                      <Text style={styles.detailValue}>
+                        {CATEGORIES[selectedItem.category]?.emoji} {CATEGORIES[selectedItem.category]?.label}
+                      </Text>
+                    </View>
+
+                    {selectedItem.subcategory && (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Alt Kategori</Text>
+                        <Text style={styles.detailValue}>{selectedItem.subcategory}</Text>
+                      </View>
+                    )}
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Renk</Text>
+                      <Text style={styles.detailValue}>{selectedItem.color}</Text>
+                    </View>
+
+                    {selectedItem.brand && (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Marka</Text>
+                        <Text style={styles.detailValue}>{selectedItem.brand}</Text>
+                      </View>
+                    )}
+
+                    {selectedItem.fabric && (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Kumaş</Text>
+                        <Text style={styles.detailValue}>{selectedItem.fabric}</Text>
+                      </View>
+                    )}
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Giyilme</Text>
+                      <Text style={styles.detailValue}>{selectedItem.times_worn || 0} kez</Text>
+                    </View>
+
+                    {/* Durum Değiştir */}
+                    <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Durum</Text>
+                    <View style={styles.statusRow}>
+                      {Object.entries(STATUS_MAP).map(([key, val]) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            styles.statusOption,
+                            selectedItem.status === key && { backgroundColor: val.color + '20', borderColor: val.color },
+                          ]}
+                          onPress={() => handleStatusChange(key)}
+                        >
+                          <Text style={styles.statusEmoji}>{val.emoji}</Text>
+                          <Text style={[styles.statusLabel, selectedItem.status === key && { color: val.color }]}>
+                            {val.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -229,4 +434,97 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 64, marginBottom: 16 },
   emptyText: { fontSize: 20, fontWeight: '700', color: COLORS.text },
   emptySubtext: { fontSize: 14, color: COLORS.textSecondary, marginTop: 4 },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '92%',
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  headerBtn: { padding: 4 },
+  saveBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  detailImage: {
+    width: '100%',
+    height: 300,
+    resizeMode: 'cover',
+  },
+
+  // Detay
+  detailInfo: { padding: 20 },
+  detailName: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 16 },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
+  },
+  detailLabel: { fontSize: 14, color: COLORS.textSecondary },
+  detailValue: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+
+  // Durum
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  statusOption: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  statusEmoji: { fontSize: 18 },
+  statusLabel: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
+
+  // Edit Form
+  editForm: { padding: 20 },
+  fieldLabel: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 8 },
+  editInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  chip: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipEmoji: { fontSize: 14 },
+  chipText: { fontSize: 12, color: COLORS.text },
+  chipTextActive: { color: '#fff' },
 });

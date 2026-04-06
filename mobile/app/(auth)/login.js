@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS } from '../../constants/theme';
@@ -31,9 +32,10 @@ export default function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (error) {
+      // Supabase hatalari error.message olarak gelir, Axios degil
       Alert.alert(
         'Giriş Hatası',
-        error.response?.data?.error || 'Bir hata oluştu'
+        error.message || 'Bir hata oluştu'
       );
     } finally {
       setLoading(false);
@@ -48,8 +50,8 @@ export default function LoginScreen() {
       <View style={styles.content}>
         {/* Logo alanı */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>👗</Text>
-          <Text style={styles.appName}>Kombin</Text>
+          <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.appName}>KombinYapp</Text>
           <Text style={styles.tagline}>AI Gardırop Asistanın</Text>
         </View>
 
@@ -116,7 +118,8 @@ const styles = StyleSheet.create({
     marginBottom: 48,
   },
   logo: {
-    fontSize: 64,
+    width: 100,
+    height: 100,
     marginBottom: 8,
   },
   appName: {
