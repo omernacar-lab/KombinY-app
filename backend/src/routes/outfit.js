@@ -1,5 +1,5 @@
 const express = require('express');
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 const { generateOutfitSuggestion } = require('../services/aiService');
 const { getWeather, getClothingAdvice } = require('../services/weatherService');
@@ -18,7 +18,7 @@ router.post('/suggest', authenticate, validate(outfitSuggestSchema), async (req,
       const today = new Date().toISOString().split('T')[0];
 
       const { data: user } = await supabase
-        .from('profiles')
+        .from('users')
         .select('daily_outfit_count, last_outfit_date')
         .eq('id', req.user.id)
         .single();
@@ -108,7 +108,7 @@ router.post('/suggest', authenticate, validate(outfitSuggestSchema), async (req,
     // Günlük sayacı güncelle
     const today = new Date().toISOString().split('T')[0];
     await supabase
-      .from('profiles')
+      .from('users')
       .update({
         daily_outfit_count: req.user.last_outfit_date === today
           ? (req.user.daily_outfit_count || 0) + 1

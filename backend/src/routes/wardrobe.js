@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 const { analyzeClothing, analyzeFrameForClothingItems, deduplicateDetectedItems } = require('../services/aiService');
 
@@ -119,25 +119,15 @@ router.post('/', authenticate, upload.single('image'), async (req, res, next) =>
     const base64Image = optimizedBuffer.toString('base64');
     const aiAnalysis = await analyzeClothing(base64Image);
 
-    // AI'ın döndürdüğü değerleri DB constraint'lerine uygun hale getir
-    const VALID_PATTERNS = ['duz', 'cizgili', 'kareli', 'cicekli', 'puantiyeli', 'desenli', 'kamuflaj', 'diger'];
-    const VALID_CATEGORIES = ['ust_giyim', 'alt_giyim', 'dis_giyim', 'elbise', 'ayakkabi', 'aksesuar', 'canta', 'ic_giyim'];
-    const VALID_STATUSES = ['temiz', 'kirli', 'utusuz', 'tamir_gerekli', 'kuru_temizleme'];
-
-    const safePattern = VALID_PATTERNS.includes(aiAnalysis.pattern) ? aiAnalysis.pattern : 'duz';
-    const safeCategory = VALID_CATEGORIES.includes(req.body.category || aiAnalysis.category)
-      ? (req.body.category || aiAnalysis.category)
-      : 'ust_giyim';
-
     // Veritabanına kaydet
     const clothingData = {
       user_id: req.user.id,
       name: req.body.name || aiAnalysis.suggested_name || 'Kıyafet',
-      category: safeCategory,
+      category: req.body.category || aiAnalysis.category,
       subcategory: aiAnalysis.subcategory,
       color: aiAnalysis.color,
       secondary_color: aiAnalysis.secondary_color,
-      pattern: safePattern,
+      pattern: aiAnalysis.pattern || 'duz',
       season: aiAnalysis.season || ['ilkbahar', 'yaz', 'sonbahar', 'kis'],
       occasion: aiAnalysis.occasion || ['gunluk'],
       fabric: aiAnalysis.fabric,
@@ -415,17 +405,14 @@ router.post('/bulk-add', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Kıyafet listesi gerekli' });
     }
 
-    const VALID_PATTERNS = ['duz', 'cizgili', 'kareli', 'cicekli', 'puantiyeli', 'desenli', 'kamuflaj', 'diger'];
-    const VALID_CATEGORIES = ['ust_giyim', 'alt_giyim', 'dis_giyim', 'elbise', 'ayakkabi', 'aksesuar', 'canta', 'ic_giyim'];
-
     const clothingData = items.map((item) => ({
       user_id: req.user.id,
       name: item.suggested_name || item.name || 'Kıyafet',
-      category: VALID_CATEGORIES.includes(item.category) ? item.category : 'ust_giyim',
+      category: item.category,
       subcategory: item.subcategory,
       color: item.color,
       secondary_color: item.secondary_color || null,
-      pattern: VALID_PATTERNS.includes(item.pattern) ? item.pattern : 'duz',
+      pattern: item.pattern || 'duz',
       season: item.season || ['ilkbahar', 'yaz', 'sonbahar', 'kis'],
       occasion: item.occasion || ['gunluk'],
       fabric: item.fabric || null,

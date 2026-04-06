@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/supabase');
 
 /**
  * Kullanıcı tercihlerini günceller (beğen/beğenme feedback loop).

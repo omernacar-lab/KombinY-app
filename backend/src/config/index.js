@@ -15,6 +15,10 @@ const config = {
     apiKey: process.env.WEATHER_API_KEY,
     baseUrl: 'https://api.openweathermap.org/data/2.5',
   },
+  jwt: {
+    secret: process.env.JWT_SECRET,
+    expiresIn: '7d',
+  },
 };
 
 module.exports = config;

@@ -13,42 +13,20 @@ async function analyzeClothing(imageBase64) {
     messages: [
       {
         role: 'system',
-        content: `Sen bir moda uzmanı ve kıyafet analiz asistanısın.
-Verilen kıyafet fotoğrafını DİKKATLİCE analiz et ve aşağıdaki bilgileri JSON formatında döndür.
-
-KATEGORİ VE ALT KATEGORİ KURALLARI (ÇOK ÖNEMLİ):
+        content: `Sen bir moda uzmanı ve kıyafet analiz asistanısın. 
+Verilen kıyafet fotoğrafını analiz et ve aşağıdaki bilgileri JSON formatında döndür:
 - category: (ust_giyim, alt_giyim, dis_giyim, elbise, ayakkabi, aksesuar, canta, ic_giyim)
-- subcategory seçenekleri:
-  * ust_giyim: tshirt, gomlek, bluz, polo, atlet, crop_top, sweatshirt, hoodie, kazak, hirka, tunik
-  * alt_giyim: pantolon, jean, kumasipantolon, esofman_alti, sort, etek, tayt, capri
-  * dis_giyim: mont, kaban, parka, trenchkot, yagmurluk, blazer, ceket, deri_ceket, yelek, puf_yelek, denim_ceket, softshell, ruzgarlik, palto, kase_kaban
-  * elbise: elbise, tulum, jile
-  * ayakkabi: sneaker, topuklu, bot, cizme, sandalet, terlik, loafer, oxford, babet, spor_ayakkabi
-  * aksesuar: saat, kolye, bileklik, yuzuk, sapka, bere, atki, sal, kemer, gunes_gozlugu, kravat, papyon, fular
-  * canta: el_cantasi, sirt_cantasi, postaci_cantasi, clutch, bel_cantasi
-  * ic_giyim: fanila, boxer, corap, termal
-
-KIYAFET TANIMLAMA İPUÇLARI:
-- YELEK (kolsuz, gövdeyi kapatan, fermuarlı/düğmeli) → dis_giyim / yelek veya puf_yelek
-- MONT (kollu, kalın, kışlık) → dis_giyim / mont
-- CEKET (kollu, daha ince, yapılandırılmış) → dis_giyim / ceket
-- HIRKA (önü açık, örgü/triko) → ust_giyim / hirka
-- HOODIE (kapüşonlu, sweatshirt) → ust_giyim / hoodie
-- SWEATSHIRT (kapüşonsuz, kalın) → ust_giyim / sweatshirt
-- KAZAK (triko/örgü, boğazlı/sıfır yaka) → ust_giyim / kazak
-- BLAZER (resmi ceket, astar) → dis_giyim / blazer
-
-Diğer alanlar:
+- subcategory: (tshirt, gomlek, bluz, kazak, hirka, mont, ceket, pantolon, jean, etek, sort, elbise, sneaker, topuklu, bot, vb.)
 - color: Ana renk (turkce)
-- secondary_color: İkincil renk varsa (turkce), yoksa null
+- secondary_color: İkincil renk varsa (turkce)
 - pattern: (duz, cizgili, kareli, cicekli, puantiyeli, desenli, kamuflaj, diger)
-- fabric: Tahmini kumaş türü (pamuk, polyester, deri, denim, yun, keten, ipek, kadife, naylon, vb.)
+- fabric: Tahmini kumaş türü
 - season: Uygun mevsimler dizisi ["ilkbahar", "yaz", "sonbahar", "kis"]
 - occasion: Uygun ortamlar dizisi ["gunluk", "is", "ozel", "spor", "gece"]
 - warmth_level: 1-5 arası sıcaklık seviyesi (1=çok ince, 5=çok kalın)
 - formality_level: 1-5 arası (1=çok casual, 5=çok resmi)
-- style_tags: Stil etiketleri dizisi (minimal, boho, klasik, sportif, streetwear, vintage, preppy, vb.)
-- suggested_name: Kıyafet için önerilen kısa isim (Türkçe, örn: "Bordo Puf Yelek", "Siyah Deri Ceket")
+- style_tags: Stil etiketleri dizisi (minimal, boho, klasik, sportif, vb.)
+- suggested_name: Kıyafet için önerilen kısa isim (Türkçe)
 
 Sadece JSON döndür, başka metin ekleme.`,
       },

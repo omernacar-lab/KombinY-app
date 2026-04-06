@@ -1,5 +1,5 @@
 const express = require('express');
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 const { validate, profileUpdateSchema, eventSchema } = require('../middleware/validate');
 
@@ -21,7 +21,7 @@ router.patch('/profile', authenticate, validate(profileUpdateSchema), async (req
     updates.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
-      .from('profiles')
+      .from('users')
       .update(updates)
       .eq('id', req.user.id)
       .select('id, email, full_name, gender, birth_year, city, style_preferences, is_premium')
