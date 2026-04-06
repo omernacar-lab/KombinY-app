@@ -46,8 +46,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(config.port, () => {
-  console.log(`Kombin API çalışıyor: http://localhost:${config.port}`);
-});
+if (config.nodeEnv !== 'test') {
+  app.listen(config.port, () => {
+    console.log(`Kombin API çalışıyor: http://localhost:${config.port}`);
+  });
+}
 
 module.exports = app;
